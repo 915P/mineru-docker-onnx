@@ -75,7 +75,7 @@ Dockerfile 内已将 apt 与 pip 指向中科大镜像源（IPv4 主站，容器
 |------|------|
 | 模型（约 1.9GB：OCR/Layout/公式/表格小模型 + 1.2B VLM） | **镜像内** `/root/.mineru/models/` |
 | ONNX 设备校准记录 | 容器内 `/root/.mineru/`（运行时生成） |
-| 解析产物输出（挂载） | 宿主 `~/.local/share/mineru-output/` → 容器 `/output` |
+| 解析产物输出 | 容器 `/output` 为 **tmpfs 内存盘**（上限 2G）：关机/重启即清空，无需手动清理；API 任务暂存在容器 `/tmp/mineru-tasks-*`，24h 自动过期 |
 
 ## 调用 API
 
