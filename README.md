@@ -46,7 +46,7 @@ docker build --build-arg MODELS=local \
 ```
 
 **B. 从零构建（默认）**：构建时从 ModelScope 下载模型全集
-（约 1.9GB：ONNX 小模型 + 1.2B VLM），耗时视网络而定：
+（约 2.0GB：ONNX 小模型 + 1.2B VLM），耗时视网络而定：
 
 ```bash
 docker build -t mineru:onnx .
@@ -73,7 +73,7 @@ Dockerfile 内已将 apt 与 pip 指向中科大镜像源（IPv4 主站，容器
 
 | 内容 | 位置 |
 |------|------|
-| 模型（约 1.9GB：OCR/Layout/公式/表格小模型 + 1.2B VLM） | **镜像内** `/root/.mineru/models/` |
+| 模型（约 2.0GB：OCR/Layout/公式/表格小模型 + 1.2B VLM） | **镜像内** `/root/.mineru/models/` |
 | ONNX 设备校准记录 | 容器内 `/root/.mineru/`（运行时生成） |
 | 解析产物输出 | 容器 `/output` 为 **tmpfs 内存盘**（上限 2G）：关机/重启即清空，无需手动清理；API 任务暂存在容器 `/tmp/mineru-tasks-*`，24h 自动过期 |
 
@@ -83,6 +83,22 @@ Dockerfile 内已将 apt 与 pip 指向中科大镜像源（IPv4 主站，容器
 curl http://127.0.0.1:8000/v1/health
 # 创建任务 → PUT 上传 → GET /v1/tasks/{id} 轮询 → files[].result_url 下载
 ```
+
+## 排查：识别时还在联网下载模型？
+
+`models verify` 一次看清模型是否齐全（缺文件会逐个列出）：
+
+```bash
+docker run --rm mineru:onnx mineru-kit models verify \
+  --tier standard --small-backend onnx --vlm-engine llama-cpp
+# 预期输出两行 "…: ok"；若列出 missing key paths，说明模型源不完整
+```
+
+常见成因：构建时模型源目录本身就是中断的下载（残留 `*.incomplete` 文件）。
+MinerU 是懒加载——识别到缺文件才当场联网补齐，所以表现为"每次识别都下载最后 10%"，
+且一次性容器（`--rm`）下完即删、每次重现。修复：在临时容器里
+`mineru-kit models download MinerU-4_models_onnx -s modelscope` 补齐，
+`docker cp` 出来后按 `MODELS=local` 重新构建。
 
 接口契约见 MinerU 官方文档的 V1 HTTP API / Tasks 章节。
 
