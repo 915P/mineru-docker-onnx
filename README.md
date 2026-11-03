@@ -13,18 +13,15 @@ MinerU 4.x 的 Docker 部署，走 **ONNX / WebGPU（Vulkan）** 路线：不依
 - 基于 Ubuntu 24.04（`mesa-vulkan-drivers` 25.x，认得 Arrow Lake / Battlemage 等新核显）
 - ONNX 设备启动时自动校准：核显跑小模型若不如 CPU，自动回落 CPU（实测数据见博客）
 - VLM（standard 档）走 llama.cpp + Vulkan，独立于小模型的设备选择
-- 模型持久化在宿主 `~/.mineru-docker`，容器重建不重新下载
+- 模型烤进镜像、自包含：容器重建与镜像分发都不再依赖宿主模型目录
 - `--restart unless-stopped`，开机自动恢复
 
 ## 快速开始
 
 ```bash
-# 1. 构建镜像（约 2GB；国内网络可加镜像加速参数，见下）
-docker build -t mineru:onnx .
-
+# 1. 构建镜像（两种方式，见下）
 # 2. 创建并启动容器
 bash run_webui.sh
-
 # 3. 使用
 #    WebUI: http://127.0.0.1:7860
 #    API:   http://127.0.0.1:8000/v1/health
@@ -37,33 +34,48 @@ docker start mineru-webui
 docker stop  mineru-webui
 ```
 
-### 国内网络加速（可选）
+### 构建镜像：两种模型就位方式
 
-基础镜像官方源不通时：
+**A. 本地已有模型（秒级，不走网络）**：机器上已有 MinerU 模型目录时
+（例如旧部署的 `~/.mineru-docker/models`），直接复制进镜像：
 
 ```bash
-docker build -t mineru:onnx \
-  --build-arg BASE_IMAGE=docker.1ms.run/library/ubuntu:24.04 .
+docker build --build-arg MODELS=local \
+  --build-context models=你的模型目录 \
+  -t mineru:onnx .
+```
+
+**B. 从零构建（默认）**：构建时从 ModelScope 下载模型全集
+（约 1.9GB：ONNX 小模型 + 1.2B VLM），耗时视网络而定：
+
+```bash
+docker build -t mineru:onnx .
+```
+
+两种方式在基础镜像官方源不通时，都可加国内镜像加速：
+
+```bash
+docker build ... --build-arg BASE_IMAGE=docker.1ms.run/library/ubuntu:24.04 .
 ```
 
 Dockerfile 内已将 apt 与 pip 指向中科大镜像源（IPv4 主站，容器内无 IPv6 时也可用）。
-若你的网络访问 HuggingFace 不畅，可加环境变量 `MINERU_MODEL_SOURCE=modelscope`（默认已设）。
+模型源默认 ModelScope（`MINERU_MODEL_SOURCE`），国内可直连。
 
 ## 目录说明
 
 | 文件 | 用途 |
 |------|------|
 | `Dockerfile` | 镜像定义（Ubuntu 24.04 + Vulkan 驱动 + MinerU 基础包） |
-| `run_webui.sh` | 一键创建容器（api-server + WebUI 一体，含持久化挂载） |
+| `run_webui.sh` | 一键创建容器（api-server + WebUI 一体，含产物输出挂载） |
 | `textbook_sample.pdf` | 自制的一页测试稿（标题/列表/表格），用于验证解析效果 |
 
 ## 模型与产物位置
 
-| 内容 | 路径 |
+| 内容 | 位置 |
 |------|------|
-| 模型（约 1.9GB，OCR 小模型 + 1.2B VLM） | `~/.mineru-docker/models/` |
-| ONNX 设备校准记录 | `~/.mineru-docker/config.yaml.onnx-calibration.json` |
-| 容器内输出目录（挂载） | `~/.mineru-docker/output/` |
+| 模型（约 1.9GB：OCR/Layout/公式/表格小模型 + 1.2B VLM） | **镜像内** `/root/.mineru/models/` |
+| ONNX 设备校准记录 | 容器内 `/root/.mineru/`（运行时生成） |
+| 解析产物输出（挂载） | 宿主 `~/.local/share/mineru-output/` → 容器 `/output` |
 
 ## 调用 API
 
